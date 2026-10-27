@@ -104,6 +104,14 @@ def resolve_preset(
     )
 
 
+def preset_for(model_id: str, revision: str | None) -> EmbedderPreset:
+    """The preset that produced a build, so queries are embedded the same way."""
+    for preset in PRESETS.values():
+        if preset.model_id == model_id and preset.revision == (revision or None):
+            return preset
+    return EmbedderPreset(name=model_id, model_id=model_id, revision=revision or None)
+
+
 def select_device(requested: str | None = None) -> str:
     """Pick the fastest available torch device unless one is requested."""
     if requested:

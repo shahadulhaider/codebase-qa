@@ -7,6 +7,7 @@ other revision are stale.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Generator, Iterable, Sequence
 from contextlib import contextmanager
@@ -215,24 +216,59 @@ class Store:
 
     def chunks(self, chunker: ChunkerName) -> list[Chunk]:
         rows = self._db.execute(
-            "SELECT file_path, language, text, start_line, end_line, symbol_kind, chunker, "
-            "symbol_name, symbol_path FROM chunks WHERE chunker = ? ORDER BY file_path, start_line",
+            f"SELECT {_CHUNK_COLUMNS} FROM chunks WHERE chunker = ? ORDER BY file_path, start_line",
             (chunker,),
         )
-        return [
-            Chunk(
-                file_path=r[0],
-                language=r[1],
-                text=r[2],
-                start_line=r[3],
-                end_line=r[4],
-                symbol_kind=_kind(r[5]),
-                chunker=_chunker(r[6]),
-                symbol_name=r[7],
-                symbol_path=r[8],
-            )
-            for r in rows
-        ]
+        return [_row_chunk(r) for r in rows]
+
+    def chunks_by_id(self, chunker: ChunkerName, chunk_ids: Sequence[str]) -> dict[str, Chunk]:
+        rows = self._db.execute(
+            f"SELECT chunk_id, {_CHUNK_COLUMNS} FROM chunks WHERE chunker = ? "
+            "AND chunk_id IN (SELECT value FROM json_each(?))",
+            (chunker, json.dumps(list(chunk_ids))),
+        )
+        return {r[0]: _row_chunk(r[1:]) for r in rows}
+
+    def matching_files(self, path_glob: str) -> list[str]:
+        """Catalog paths matching a case-sensitive SQLite GLOB (``*`` crosses ``/``)."""
+        rows = self._db.execute(
+            "SELECT path FROM files WHERE path GLOB ? ORDER BY path", (path_glob,)
+        )
+        return [r[0] for r in rows]
+
+    def bm25(
+        self,
+        chunker: ChunkerName,
+        match: str,
+        k: int,
+        *,
+        languages: Sequence[str] = (),
+        kinds: Sequence[str] = (),
+        files: Sequence[str] | None = None,
+    ) -> list[tuple[str, float]]:
+        """Top ``k`` chunk ids for an FTS5 ``match`` expression, best first.
+
+        Scores are negated FTS5 ``bm25()`` values, so higher is better. The
+        path column is down-weighted relative to the chunk text.
+        """
+        where = ["chunks_fts MATCH ?", "c.chunker = ?"]
+        params: list[object] = [match, chunker]
+        if languages:
+            where.append("c.language IN (SELECT value FROM json_each(?))")
+            params.append(json.dumps(list(languages)))
+        if kinds:
+            where.append("c.symbol_kind IN (SELECT value FROM json_each(?))")
+            params.append(json.dumps(list(kinds)))
+        if files is not None:
+            where.append("c.file_path IN (SELECT value FROM json_each(?))")
+            params.append(json.dumps(list(files)))
+        rows = self._db.execute(
+            "SELECT c.chunk_id, -bm25(chunks_fts, 1.0, 0.5) AS score FROM chunks_fts "
+            f"JOIN chunks c ON c.id = chunks_fts.rowid WHERE {' AND '.join(where)} "
+            "ORDER BY score DESC LIMIT ?",
+            [*params, k],
+        )
+        return [(str(r[0]), float(r[1])) for r in rows]
 
     def chunk_count(self, chunker: ChunkerName) -> int:
         row = self._db.execute("SELECT count(*) FROM chunks WHERE chunker = ?", (chunker,))
@@ -271,6 +307,26 @@ class Store:
 
     def _delete_fts(self, select_ids: str, params: Sequence[object]) -> None:
         self._db.execute(f"DELETE FROM chunks_fts WHERE rowid IN ({select_ids})", params)
+
+
+_CHUNK_COLUMNS = (
+    "file_path, language, text, start_line, end_line, symbol_kind, chunker, "
+    "symbol_name, symbol_path"
+)
+
+
+def _row_chunk(r: Sequence[object]) -> Chunk:
+    return Chunk(
+        file_path=str(r[0]),
+        language=str(r[1]),
+        text=str(r[2]),
+        start_line=cast(int, r[3]),
+        end_line=cast(int, r[4]),
+        symbol_kind=_kind(str(r[5])),
+        chunker=_chunker(str(r[6])),
+        symbol_name=str(r[7]),
+        symbol_path=str(r[8]),
+    )
 
 
 def _has_tables(db: sqlite3.Connection) -> bool:

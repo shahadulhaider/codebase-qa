@@ -17,6 +17,7 @@ from codebase_qa.embeddings import (
     PRESETS,
     SentenceTransformerEmbedder,
     load_token_counter,
+    preset_for,
     resolve_preset,
 )
 from codebase_qa.git import GitError
@@ -29,6 +30,7 @@ from codebase_qa.indexer import (
     index_stats,
     is_up_to_date,
 )
+from codebase_qa.retrieval import Filters, IndexNotFoundError, Mode, Searcher, StaleIndexError
 from codebase_qa.store import SchemaVersionError
 
 REFERENCE_TOKENIZER = "minilm"
@@ -229,3 +231,60 @@ def _remove_index(target: Path) -> None:
             f"refusing to delete {target}: it contains {', '.join(sorted(unexpected))}"
         )
     shutil.rmtree(target)
+
+
+@app.command()
+def search(
+    query: Annotated[str, typer.Argument(help="Natural-language or identifier query.")],
+    repo: Annotated[Path, typer.Argument(exists=True, file_okay=False)] = Path("."),
+    k: Annotated[int, typer.Option("--k", "-k", help="Number of results.")] = 10,
+    mode: Annotated[Mode, typer.Option(help="Retriever.")] = "dense",
+    lang: Annotated[list[str] | None, typer.Option(help="Language filter; repeatable.")] = None,
+    kind: Annotated[list[str] | None, typer.Option(help="Symbol kind filter; repeatable.")] = None,
+    path: Annotated[str | None, typer.Option(help="Path glob, e.g. 'httpx/_*.py'.")] = None,
+    chunker: Annotated[ChunkerName | None, typer.Option(help="Build to query.")] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(envvar="CODEBASE_QA_MODEL", help="Embedder preset or Hugging Face id."),
+    ] = None,
+    device: Annotated[
+        str | None, typer.Option(envvar="CODEBASE_QA_DEVICE", help="cpu, cuda or mps.")
+    ] = None,
+    index_dir: IndexDirOption = None,
+    show: Annotated[bool, typer.Option(help="Print each result's text.")] = False,
+) -> None:
+    """Search an index and print ranked chunks."""
+    target = index_dir or repo / DEFAULT_INDEX_DIR
+    model_id = resolve_preset(model).model_id if model else None
+    try:
+        searcher = Searcher.open(target, model_id=model_id, chunker=chunker)
+    except (IndexNotFoundError, StaleIndexError, SchemaVersionError) as error:
+        raise typer.BadParameter(str(error)) from error
+    console = Console()
+    build = searcher.build
+
+    def embedder() -> SentenceTransformerEmbedder:
+        with console.status(f"loading {build.model_id}"):
+            return SentenceTransformerEmbedder(
+                preset_for(build.model_id, build.model_revision), device=device
+            )
+
+    filters = Filters(languages=tuple(lang or ()), kinds=tuple(kind or ()), path_glob=path)
+    with searcher:
+        results = searcher.search(query, mode=mode, k=k, filters=filters, embedder=embedder)
+
+    label = "similarity" if mode == "dense" else "bm25"
+    table = Table(title=f"{mode} · {build.collection} · {build.indexed_rev[:12]}")
+    for column in ("#", label, "location", "symbol", "kind"):
+        numeric = column in {"#", label}
+        table.add_column(column, justify="right" if numeric else "left", overflow="fold")
+    for rank, r in enumerate(results, 1):
+        c = r.chunk
+        table.add_row(str(rank), f"{r.score:.3f}", r.location, c.symbol_path or "-", c.symbol_kind)
+    console.print(table)
+    if not results:
+        console.print("no results")
+    if show:
+        for rank, r in enumerate(results, 1):
+            console.rule(f"#{rank} {r.location} {r.chunk.symbol_path}")
+            console.print(r.chunk.text, markup=False, highlight=False)
