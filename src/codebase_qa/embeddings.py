@@ -126,6 +126,8 @@ class SentenceTransformerEmbedder:
             device=select_device(device),
             trust_remote_code=preset.trust_remote_code,
         )
+        if preset.trust_remote_code:
+            _restore_extended_attention_mask(self._model)
         dimension = self._model.get_embedding_dimension()
         max_seq_length = self._model.max_seq_length
         if dimension is None or max_seq_length is None:
@@ -175,6 +177,33 @@ class SentenceTransformerEmbedder:
             show_progress_bar=False,
         )
         return np.asarray(vectors, dtype=np.float32)
+
+
+def _restore_extended_attention_mask(model: SentenceTransformer) -> None:
+    """Re-add ``get_extended_attention_mask`` for remote code written against transformers 4.
+
+    transformers 5 removed the helper, but pinned remote modelling code (e.g.
+    CodeRankEmbed's NomicBert) still calls it. The replacement reproduces the
+    4.x behaviour for 2-D padding masks: broadcast to (batch, 1, 1, seq) and
+    turn padded positions into a large negative additive bias.
+    """
+    import torch
+
+    for module in model.modules():
+        cls = type(module)
+        if cls.__name__.endswith("Model") and not hasattr(module, "get_extended_attention_mask"):
+
+            def get_extended_attention_mask(
+                self: torch.nn.Module,
+                attention_mask: torch.Tensor,
+                input_shape: tuple[int, ...],
+                dtype: torch.dtype | None = None,
+            ) -> torch.Tensor:
+                dtype = dtype or next(self.parameters()).dtype
+                mask = attention_mask[:, None, None, :].to(dtype)
+                return (1.0 - mask) * torch.finfo(dtype).min
+
+            cls.get_extended_attention_mask = get_extended_attention_mask  # pyright: ignore[reportAttributeAccessIssue]
 
 
 _TOKEN = re.compile(r"[A-Za-z0-9]+")

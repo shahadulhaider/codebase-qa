@@ -64,3 +64,15 @@ def test_coderankembed_prefixes_queries_only() -> None:
     assert embedder.dimension == 768
     np.testing.assert_allclose(np.linalg.norm(as_query), 1.0, rtol=1e-5)
     assert not np.allclose(as_document, as_query)
+
+
+@pytest.mark.model
+def test_coderankembed_batch_padding_matches_single_inputs() -> None:
+    embedder = SentenceTransformerEmbedder.from_preset("coderankembed", device="cpu")
+    short = "def f(): pass"
+    long = "def load_config(path):\n    with open(path) as f:\n        return yaml.safe_load(f)"
+
+    batched = embedder.embed_documents([short, long])
+
+    np.testing.assert_allclose(batched[0], embedder.embed_documents([short])[0], atol=1e-4)
+    np.testing.assert_allclose(batched[1], embedder.embed_documents([long])[0], atol=1e-4)
