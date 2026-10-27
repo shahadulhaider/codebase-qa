@@ -85,7 +85,7 @@ PRESETS: dict[str, EmbedderPreset] = {
     )
 }
 
-DEFAULT_PRESET = "coderankembed"
+DEFAULT_PRESET = "minilm"
 
 
 def select_device(requested: str | None = None) -> str:
