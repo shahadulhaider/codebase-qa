@@ -12,9 +12,9 @@ from __future__ import annotations
 import hashlib
 import re
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -257,3 +257,21 @@ class HashEmbedder:
             vector[0] = 1.0
             return vector
         return vector / norm
+
+
+def load_token_counter(preset: EmbedderPreset) -> Callable[[str], int]:
+    """Token counter for ``preset``'s tokenizer, loaded without the model weights.
+
+    Counts include special tokens, matching what the model sees. Tokenizers
+    are loaded without remote code even for presets that trust it, since
+    only the modelling code is custom.
+    """
+    from transformers import AutoTokenizer
+
+    tokenizer = cast(Any, AutoTokenizer).from_pretrained(preset.model_id, revision=preset.revision)
+
+    def count(text: str) -> int:
+        ids = cast(list[int], tokenizer(text, add_special_tokens=True)["input_ids"])
+        return len(ids)
+
+    return count

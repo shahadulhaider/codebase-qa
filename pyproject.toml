@@ -10,8 +10,13 @@ requires-python = ">=3.12"
 dependencies = [
     "chromadb>=1.5.9",
     "einops>=0.8.2",
+    "rich>=15.0.0",
     "sentence-transformers>=6.2.0",
     "torch>=2.14.1",
+    "tree-sitter>=0.25.2,<0.26",  # 0.26.0 segfaults under repeated query matching
+    "tree-sitter-javascript>=0.25.0",
+    "tree-sitter-python>=0.25.0",
+    "tree-sitter-typescript>=0.23.2",
     "typer>=0.27.3",
 ]
 
@@ -31,6 +36,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["tests/fixtures"]
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -38,6 +44,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.pyright]
 include = ["src", "tests"]
+exclude = ["tests/fixtures"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 venvPath = "."
