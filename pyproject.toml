@@ -8,6 +8,10 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "chromadb>=1.5.9",
+    "einops>=0.8.2",
+    "sentence-transformers>=6.2.0",
+    "torch>=2.14.1",
     "typer>=0.27.3",
 ]
 
@@ -41,4 +45,15 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra -m 'not model'"
+markers = ["model: downloads and runs real embedding models"]
+# Chroma reports collections created without an embedding function as "legacy".
+filterwarnings = ["ignore:legacy embedding function config:DeprecationWarning"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
