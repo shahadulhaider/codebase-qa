@@ -128,3 +128,16 @@ def test_identity_depends_on_location_but_content_sha_on_embedded_text() -> None
 def test_role_for_path(path: str, role: str) -> None:
     assert role_for_path(path) == role
 
+
+def test_overlong_single_line_splits_at_word_boundaries() -> None:
+    words = [f"word{i}" for i in range(300)]
+    source = "# Title\n\n" + " ".join(words) + "\n\nAfter.\n"
+    chunker = LineWindowChunker(whitespace_token_count, max_tokens=50, overlap_lines=0)
+
+    chunks = chunker.chunk("docs/long.md", "markdown", source)
+
+    pieces = [c for c in chunks if c.start_line == 3]
+    assert len(pieces) > 1
+    assert all(whitespace_token_count(c.embedding_text) <= 50 for c in chunks)
+    rebuilt = " ".join(c.text.split("\n")[0] for c in pieces).split()
+    assert rebuilt == words

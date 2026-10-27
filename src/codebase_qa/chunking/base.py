@@ -91,13 +91,15 @@ def split_to_budget(
 
     Per-line costs are counted once and summed, which matches whole-text
     counts for tokenizers that split on whitespace boundaries. Consecutive
-    windows share up to ``overlap_lines`` trailing lines. A single line that
-    exceeds the budget on its own becomes a window by itself.
+    windows share up to ``overlap_lines`` trailing lines. A line that exceeds
+    the budget on its own (e.g. a paragraph written on one line) is split at
+    word boundaries; every piece keeps that line's number.
     """
     if not lines:
         return []
     overhead = token_count("")
-    budget = max_tokens - token_count(header)
+    budget = max(1, max_tokens - token_count(header))
+    lines = [piece for line in lines for piece in _split_line(line, budget, token_count, overhead)]
     costs = [token_count(line.text) - overhead for line in lines]
 
     windows: list[list[Line]] = []
@@ -113,3 +115,21 @@ def split_to_budget(
             break
         start = max(end - overlap_lines, start + 1)
     return windows
+
+
+def _split_line(line: Line, budget: int, token_count: TokenCounter, overhead: int) -> list[Line]:
+    if token_count(line.text) - overhead <= budget:
+        return [line]
+    pieces: list[Line] = []
+    words: list[str] = []
+    used = 0
+    for word in line.text.split(" "):
+        cost = token_count(word) - overhead
+        if words and used + cost > budget:
+            pieces.append(Line(line.number, " ".join(words)))
+            words, used = [], 0
+        words.append(word)
+        used += cost
+    if words:
+        pieces.append(Line(line.number, " ".join(words)))
+    return pieces
