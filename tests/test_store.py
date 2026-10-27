@@ -35,10 +35,10 @@ def test_split_identifier(identifier: str, parts: list[str]) -> None:
     assert split_identifier(identifier) == parts
 
 
-def test_search_terms_adds_camel_case_parts_only() -> None:
+def test_search_terms_appends_identifier_parts() -> None:
     terms = search_terms("def get_user(): return fetchUserById(x)")
 
-    assert terms.endswith("fetch user by id")
+    assert terms.endswith("fetch user by id get user")
 
 
 def test_fts_matches_camel_case_parts_and_whole_identifiers(tmp_path: Path) -> None:
@@ -53,6 +53,7 @@ def test_fts_matches_camel_case_parts_and_whole_identifiers(tmp_path: Path) -> N
     assert fts(tmp_path / "catalog.sqlite3", "user") == ["a.ts"]
     assert fts(tmp_path / "catalog.sqlite3", "getuserbyid") == ["a.ts"]
     assert fts(tmp_path / "catalog.sqlite3", "config") == ["b.py"]
+    assert fts(tmp_path / "catalog.sqlite3", "load_config") == ["b.py"]
 
 
 def test_deleting_a_file_removes_its_chunks_and_fts_rows(tmp_path: Path) -> None:

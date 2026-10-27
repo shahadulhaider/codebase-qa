@@ -42,6 +42,8 @@ class ResolvedFilters:
             terms.append({"language": {"$in": list(self.filters.languages)}})
         if self.filters.kinds:
             terms.append({"symbol_kind": {"$in": list(self.filters.kinds)}})
+        if self.filters.roles:
+            terms.append({"role": {"$in": list(self.filters.roles)}})
         if self.files is not None and self.pushes_files_to_vector_store:
             terms.append({"file_path": {"$in": list(self.files)}})
         if not terms:

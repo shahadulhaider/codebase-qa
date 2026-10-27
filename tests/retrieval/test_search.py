@@ -29,6 +29,7 @@ FILES = {
         "def follow_redirects(response):\n    return token response location\n"
     ),
     "src/config.py": "def load_config(path):\n    return token path settings\n",
+    "tests/test_client.py": "def test_send():\n    assert token\n",
     "web/users.ts": (
         "export function getUserById(id: number) {\n  return token;\n}\n\n"
         "export interface User {\n  token: string;\n}\n"
@@ -107,7 +108,15 @@ def test_dense_requires_an_embedder(index_dir: Path) -> None:
             Filters(path_glob="src/http/*"),
             {"Client", "Client.send", "Client.close", "follow_redirects"},
         ),
-        (Filters(languages=("python",), kinds=("function",)), {"follow_redirects", "load_config"}),
+        (
+            Filters(languages=("python",), kinds=("function",)),
+            {"follow_redirects", "load_config", "test_send"},
+        ),
+        (Filters(roles=("test",)), {"test_send"}),
+        (
+            Filters(roles=("source",), kinds=("function",)),
+            {"follow_redirects", "load_config", "getUserById"},
+        ),
     ],
 )
 def test_filters_give_both_retrievers_the_same_candidates(

@@ -17,15 +17,24 @@ def split_identifier(identifier: str) -> list[str]:
 
 
 def search_terms(text: str) -> str:
-    """Text for the FTS index: the original text plus camelCase sub-words.
+    """Text for the FTS index: the original text plus identifier sub-words.
 
-    SQLite's ``unicode61`` tokenizer already splits on underscores and
-    punctuation but keeps ``getUserById`` as one token, so its parts are
-    appended. The original token stays searchable for exact-name queries.
+    The FTS tokenizer keeps ``_`` inside tokens, so ``get_user_by_id`` and
+    ``getUserById`` each stay one exact token; their parts are appended so
+    partial-word queries still match.
     """
     extra: list[str] = []
-    for identifier in set(_IDENTIFIER.findall(text)):
+    for identifier in sorted(set(_IDENTIFIER.findall(text))):
         parts = split_identifier(identifier)
-        if len(parts) > 1 and any(c.isupper() for c in identifier):
+        if len(parts) > 1:
             extra.extend(parts)
     return text if not extra else f"{text}\n{' '.join(extra)}"
+
+
+def symbol_terms(symbol_path: str) -> str:
+    """FTS text for a qualified symbol: ``Client.getUser`` -> ``Client getUser client get user``."""
+    if not symbol_path:
+        return ""
+    names = symbol_path.split(".")
+    parts = [part for name in names for part in split_identifier(name)]
+    return " ".join([*names, *parts])

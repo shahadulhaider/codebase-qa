@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import cast
 
 from codebase_qa.chunking import Chunk, ChunkerName, SymbolKind
-from codebase_qa.terms import search_terms
+from codebase_qa.chunking.selection import role_for_path
+from codebase_qa.terms import search_terms, symbol_terms
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -37,6 +38,7 @@ CREATE TABLE chunks (
     symbol_name TEXT NOT NULL,
     symbol_path TEXT NOT NULL,
     symbol_kind TEXT NOT NULL,
+    role TEXT NOT NULL,
     start_line INTEGER NOT NULL,
     end_line INTEGER NOT NULL,
     content_sha TEXT NOT NULL,
@@ -45,7 +47,9 @@ CREATE TABLE chunks (
 );
 CREATE INDEX chunks_by_file ON chunks (chunker, file_path);
 CREATE INDEX chunks_by_content ON chunks (content_sha);
-CREATE VIRTUAL TABLE chunks_fts USING fts5(terms, path, tokenize = 'unicode61');
+CREATE VIRTUAL TABLE chunks_fts USING fts5(
+    terms, path, symbol, tokenize = "unicode61 tokenchars '_'"
+);
 CREATE TABLE builds (
     collection TEXT PRIMARY KEY,
     model_id TEXT NOT NULL,
@@ -96,6 +100,7 @@ class StoredChunk:
             "symbol_name": c.symbol_name,
             "symbol_path": c.symbol_path,
             "symbol_kind": c.symbol_kind,
+            "role": role_for_path(c.file_path),
             "start_line": c.start_line,
             "end_line": c.end_line,
             "chunker": c.chunker,
@@ -193,8 +198,8 @@ class Store:
         for c in chunks:
             cursor = self._db.execute(
                 "INSERT INTO chunks (chunk_id, chunker, file_path, language, symbol_name, "
-                "symbol_path, symbol_kind, start_line, end_line, content_sha, text) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "symbol_path, symbol_kind, role, start_line, end_line, content_sha, text) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     c.chunk_id,
                     c.chunker,
@@ -203,6 +208,7 @@ class Store:
                     c.symbol_name,
                     c.symbol_path,
                     c.symbol_kind,
+                    role_for_path(c.file_path),
                     c.start_line,
                     c.end_line,
                     c.content_sha,
@@ -210,8 +216,8 @@ class Store:
                 ),
             )
             self._db.execute(
-                "INSERT INTO chunks_fts (rowid, terms, path) VALUES (?, ?, ?)",
-                (cursor.lastrowid, search_terms(c.text), c.file_path),
+                "INSERT INTO chunks_fts (rowid, terms, path, symbol) VALUES (?, ?, ?, ?)",
+                (cursor.lastrowid, search_terms(c.text), c.file_path, symbol_terms(c.symbol_path)),
             )
 
     def chunks(self, chunker: ChunkerName) -> list[Chunk]:
@@ -244,12 +250,14 @@ class Store:
         *,
         languages: Sequence[str] = (),
         kinds: Sequence[str] = (),
+        roles: Sequence[str] = (),
         files: Sequence[str] | None = None,
     ) -> list[tuple[str, float]]:
         """Top ``k`` chunk ids for an FTS5 ``match`` expression, best first.
 
-        Scores are negated FTS5 ``bm25()`` values, so higher is better. The
-        path column is down-weighted relative to the chunk text.
+        Scores are negated FTS5 ``bm25()`` values, so higher is better. Column
+        weights favour the symbol name, so a definition outranks code that
+        merely mentions it, and down-weight the path.
         """
         where = ["chunks_fts MATCH ?", "c.chunker = ?"]
         params: list[object] = [match, chunker]
@@ -259,11 +267,14 @@ class Store:
         if kinds:
             where.append("c.symbol_kind IN (SELECT value FROM json_each(?))")
             params.append(json.dumps(list(kinds)))
+        if roles:
+            where.append("c.role IN (SELECT value FROM json_each(?))")
+            params.append(json.dumps(list(roles)))
         if files is not None:
             where.append("c.file_path IN (SELECT value FROM json_each(?))")
             params.append(json.dumps(list(files)))
         rows = self._db.execute(
-            "SELECT c.chunk_id, -bm25(chunks_fts, 1.0, 0.5) AS score FROM chunks_fts "
+            f"SELECT c.chunk_id, -bm25(chunks_fts, {_BM25_WEIGHTS}) AS score FROM chunks_fts "
             f"JOIN chunks c ON c.id = chunks_fts.rowid WHERE {' AND '.join(where)} "
             "ORDER BY score DESC LIMIT ?",
             [*params, k],
@@ -308,6 +319,9 @@ class Store:
     def _delete_fts(self, select_ids: str, params: Sequence[object]) -> None:
         self._db.execute(f"DELETE FROM chunks_fts WHERE rowid IN ({select_ids})", params)
 
+
+# FTS5 column weights for (terms, path, symbol): fixed defaults, not tuned.
+_BM25_WEIGHTS = "1.0, 0.5, 3.0"
 
 _CHUNK_COLUMNS = (
     "file_path, language, text, start_line, end_line, symbol_kind, chunker, "

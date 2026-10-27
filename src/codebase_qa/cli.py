@@ -241,6 +241,9 @@ def search(
     mode: Annotated[Mode, typer.Option(help="Retriever.")] = "dense",
     lang: Annotated[list[str] | None, typer.Option(help="Language filter; repeatable.")] = None,
     kind: Annotated[list[str] | None, typer.Option(help="Symbol kind filter; repeatable.")] = None,
+    role: Annotated[
+        list[str] | None, typer.Option(help="source, test, docs or config; repeatable.")
+    ] = None,
     path: Annotated[str | None, typer.Option(help="Path glob, e.g. 'httpx/_*.py'.")] = None,
     chunker: Annotated[ChunkerName | None, typer.Option(help="Build to query.")] = None,
     model: Annotated[
@@ -269,7 +272,12 @@ def search(
                 preset_for(build.model_id, build.model_revision), device=device
             )
 
-    filters = Filters(languages=tuple(lang or ()), kinds=tuple(kind or ()), path_glob=path)
+    filters = Filters(
+        languages=tuple(lang or ()),
+        kinds=tuple(kind or ()),
+        roles=tuple(role or ()),
+        path_glob=path,
+    )
     with searcher:
         results = searcher.search(query, mode=mode, k=k, filters=filters, embedder=embedder)
 

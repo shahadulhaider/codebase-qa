@@ -20,6 +20,8 @@ class Filters:
 
     languages: tuple[str, ...] = ()
     kinds: tuple[str, ...] = ()
+    roles: tuple[str, ...] = ()
+    """File roles: source, test, docs or config (see ``role_for_path``)."""
     path_glob: str | None = None
 
 

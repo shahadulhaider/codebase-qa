@@ -11,6 +11,7 @@ from codebase_qa.chunking import (
     route_file,
     whitespace_token_count,
 )
+from codebase_qa.chunking.selection import role_for_path
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "chunking"
 REGISTRY = LanguageRegistry.default()
@@ -103,3 +104,27 @@ def test_identity_depends_on_location_but_content_sha_on_embedded_text() -> None
     assert a.content_sha == moved.content_sha
     assert a.content_sha != renamed.content_sha
     assert a.embedding_text == "# a.py\n# f (function)\ndef f(): pass"
+
+
+@pytest.mark.parametrize(
+    ("path", "role"),
+    [
+        ("httpx/_client.py", "source"),
+        ("tests/client/test_redirects.py", "test"),
+        ("pkg/test_utils.py", "test"),
+        ("pkg/utils_test.py", "test"),
+        ("conftest.py", "test"),
+        ("web/src/button.test.tsx", "test"),
+        ("web/src/__tests__/button.tsx", "test"),
+        ("tests/fixtures/data.json", "test"),
+        ("docs/advanced/transports.md", "docs"),
+        ("README.md", "docs"),
+        ("docs/conf.py", "docs"),
+        ("pyproject.toml", "config"),
+        ("web/tsconfig.json", "config"),
+        ("contest.py", "source"),
+    ],
+)
+def test_role_for_path(path: str, role: str) -> None:
+    assert role_for_path(path) == role
+

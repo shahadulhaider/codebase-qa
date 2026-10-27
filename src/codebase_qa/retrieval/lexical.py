@@ -42,5 +42,6 @@ def bm25_search(
         k,
         languages=filters.filters.languages,
         kinds=filters.filters.kinds,
+        roles=filters.filters.roles,
         files=filters.files,
     )

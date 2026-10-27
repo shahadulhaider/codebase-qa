@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import PurePosixPath
+from typing import Literal
 
 from codebase_qa.chunking.languages import WINDOW_LANGUAGES, LanguageRegistry
 
@@ -61,3 +62,29 @@ def route_file(
     if language is not None:
         return FileRoute(language, syntax_aware=False)
     return None
+
+
+Role = Literal["source", "test", "docs", "config"]
+
+_TEST_DIRS = frozenset({"test", "tests", "__tests__", "spec", "specs"})
+_DOC_DIRS = frozenset({"doc", "docs"})
+_TEST_FILES = ("test_*.py", "*_test.py", "conftest.py", "*.test.*", "*.spec.*")
+_DOC_SUFFIXES = frozenset({".md", ".markdown", ".rst"})
+_CONFIG_SUFFIXES = frozenset({".json", ".yaml", ".yml", ".toml"})
+
+
+def role_for_path(path: str) -> Role:
+    """Classify a repo-relative path; tests win over docs, docs over config.
+
+    The rules are path conventions only, so a fixture under ``tests/`` is a
+    test file whatever its extension.
+    """
+    posix = PurePosixPath(path)
+    directories = {part.lower() for part in posix.parts[:-1]}
+    if directories & _TEST_DIRS or any(fnmatch(posix.name, p) for p in _TEST_FILES):
+        return "test"
+    if directories & _DOC_DIRS or posix.suffix.lower() in _DOC_SUFFIXES:
+        return "docs"
+    if posix.suffix.lower() in _CONFIG_SUFFIXES:
+        return "config"
+    return "source"

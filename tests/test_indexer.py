@@ -70,6 +70,7 @@ def test_vectors_carry_full_metadata(repo: Path, tmp_path: Path) -> None:
         "symbol_name": "load_config",
         "symbol_path": "load_config",
         "symbol_kind": "function",
+        "role": "source",
         "start_line": 5,
         "end_line": 6,
         "chunker": "treesitter",
