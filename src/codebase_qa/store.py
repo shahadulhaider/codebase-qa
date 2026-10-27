@@ -140,15 +140,25 @@ class Store:
 
     @property
     def current_rev(self) -> str | None:
-        row = self._db.execute("SELECT value FROM meta WHERE key = 'current_rev'").fetchone()
-        return None if row is None else str(row[0])
+        return self.get_meta("current_rev")
 
     def set_current_rev(self, rev: str) -> None:
+        self.set_meta("current_rev", rev)
+
+    def get_meta(self, key: str) -> str | None:
+        row = self._db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return None if row is None else str(row[0])
+
+    def set_meta(self, key: str, value: str) -> None:
         self._db.execute(
-            "INSERT INTO meta (key, value) VALUES ('current_rev', ?) "
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
             "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-            (rev,),
+            (key, value),
         )
+
+    def chunkers(self) -> set[ChunkerName]:
+        """Chunkers that have chunks in the catalog."""
+        return {_chunker(r[0]) for r in self._db.execute("SELECT DISTINCT chunker FROM chunks")}
 
     def files(self) -> dict[str, FileRecord]:
         rows = self._db.execute("SELECT path, blob_sha, language, size FROM files")

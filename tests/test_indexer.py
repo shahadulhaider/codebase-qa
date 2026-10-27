@@ -48,7 +48,7 @@ def test_full_index_writes_catalog_and_vectors(repo: Path, tmp_path: Path) -> No
     report = run(repo, index_dir)
 
     assert (report.files, report.skipped) == (3, 2)
-    assert report.embedded == report.chunks > 0
+    assert report.sync.embedded == report.chunks > 0
     collection = ChromaVectorIndex.open(index_dir / VECTORS_DIR, report.collection)
     assert collection.count() == report.chunks
     stats = index_stats(index_dir)
@@ -84,7 +84,7 @@ def test_rerun_at_same_revision_is_a_no_op(repo: Path, tmp_path: Path) -> None:
     second = run(repo, tmp_path / "index")
 
     assert second.up_to_date
-    assert second.embedded == 0
+    assert second.sync.embedded == 0
 
 
 def test_two_chunkers_coexist_in_one_index(repo: Path, tmp_path: Path) -> None:

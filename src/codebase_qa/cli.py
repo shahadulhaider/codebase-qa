@@ -27,6 +27,7 @@ from codebase_qa.indexer import (
     IndexOptions,
     index_repo,
     index_stats,
+    is_up_to_date,
 )
 from codebase_qa.store import SchemaVersionError
 
@@ -126,6 +127,9 @@ def index(
     index_dir: IndexDirOption = None,
     rebuild: Annotated[bool, typer.Option(help="Delete the index and start over.")] = False,
     offline: Annotated[bool, typer.Option(help="Use only cached models.")] = False,
+    verify: Annotated[
+        bool, typer.Option(help="Reconcile vectors with the catalog even if up to date.")
+    ] = False,
 ) -> None:
     """Index a repository revision."""
     if offline:
@@ -134,11 +138,18 @@ def index(
     if rebuild:
         _remove_index(target)
     preset = resolve_preset(model, revision=revision, trust_remote_code=trust_remote_code)
+    options = IndexOptions(chunker=chunker, excludes=tuple(exclude or ()), verify=verify)
     console = Console()
+    try:
+        current = is_up_to_date(repo, target, preset.model_id, preset.revision, options, rev=rev)
+    except (GitError, SchemaVersionError) as error:
+        raise typer.BadParameter(str(error)) from error
+    if current:
+        console.print(f"index at {target} is up to date for {preset.name} ({chunker})")
+        return
     with console.status(f"loading {preset.model_id}"):
         embedder = SentenceTransformerEmbedder(preset, device=device)
         token_count = load_token_counter(PRESETS[REFERENCE_TOKENIZER])
-    options = IndexOptions(chunker=chunker, excludes=tuple(exclude or ()))
     with Progress(
         "[progress.description]{task.description}",
         BarColumn(),
@@ -161,9 +172,13 @@ def index(
     if report.up_to_date:
         console.print(f"{report.collection} is up to date at {report.commit[:12]}")
         return
+    c, s = report.changes, report.sync
     console.print(
-        f"indexed {report.commit[:12]} into {report.collection}: {report.files} files "
-        f"({report.skipped} skipped), {report.chunks} chunks, {report.embedded} embedded"
+        f"indexed {report.commit[:12]} into {report.collection}\n"
+        f"  files:  {report.files} ({report.skipped} skipped)  "
+        f"+{c.added} ~{c.modified} -{c.deleted} ={c.unchanged}\n"
+        f"  chunks: {report.chunks}  embedded {s.embedded}, reused {s.reused}, "
+        f"kept {s.kept}, removed {s.removed}"
     )
 
 

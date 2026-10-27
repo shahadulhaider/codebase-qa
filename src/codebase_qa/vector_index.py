@@ -163,6 +163,19 @@ class ChromaVectorIndex:
             for id_, vector in zip(result["ids"], embeddings, strict=True)
         }
 
+    def content_shas(self) -> dict[str, str]:
+        """Every stored id mapped to its ``content_sha`` metadata."""
+        result = self._collection.get(include=["metadatas"])
+        metadatas = result["metadatas"] or []
+        return {
+            id_: str((metadata or {}).get("content_sha", ""))
+            for id_, metadata in zip(result["ids"], metadatas, strict=True)
+        }
+
+    def update_metadata(self, ids: Sequence[str], metadatas: Sequence[Metadata]) -> None:
+        if ids:
+            self._collection.update(ids=list(ids), metadatas=[dict(m) for m in metadatas])
+
     def query(self, embedding: Vectors, k: int, where: Where | None = None) -> list[VectorHit]:
         result = self._collection.query(
             query_embeddings=[embedding],
