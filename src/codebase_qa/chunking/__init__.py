@@ -52,6 +52,6 @@ def chunk_file(
         return TreeSitterChunker(token_count, registry=registry, max_tokens=max_tokens).chunk(
             file_path, route.language, source
         )
-    return LineWindowChunker(token_count, max_tokens=max_tokens).chunk(
+    return LineWindowChunker(token_count, max_tokens=max_tokens, name=chunker).chunk(
         file_path, route.language, source
     )

@@ -6,11 +6,17 @@ from codebase_qa.chunking.base import Chunk, ChunkerName, Line, TokenCounter, sp
 
 
 class LineWindowChunker:
-    name: ChunkerName = "window"
-
     def __init__(
-        self, token_count: TokenCounter, *, max_tokens: int = 256, overlap_lines: int = 2
+        self,
+        token_count: TokenCounter,
+        *,
+        max_tokens: int = 256,
+        overlap_lines: int = 2,
+        name: ChunkerName = "window",
     ) -> None:
+        # ``name`` labels the build strategy; the syntax-aware strategy reuses
+        # this chunker for non-code files and keeps its own label.
+        self.name: ChunkerName = name
         self._token_count = token_count
         self._max_tokens = max_tokens
         self._overlap_lines = overlap_lines

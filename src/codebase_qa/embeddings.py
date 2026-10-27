@@ -88,6 +88,22 @@ PRESETS: dict[str, EmbedderPreset] = {
 DEFAULT_PRESET = "minilm"
 
 
+def resolve_preset(
+    model: str, *, revision: str | None = None, trust_remote_code: bool = False
+) -> EmbedderPreset:
+    """A built-in preset by name, or an ad-hoc preset for a Hugging Face model id.
+
+    Ad-hoc models only run custom modelling code when explicitly trusted.
+    """
+    if model in PRESETS:
+        return PRESETS[model]
+    if trust_remote_code and revision is None:
+        warnings.warn(f"trusting remote code for {model} without a pinned revision", stacklevel=2)
+    return EmbedderPreset(
+        name=model, model_id=model, revision=revision, trust_remote_code=trust_remote_code
+    )
+
+
 def select_device(requested: str | None = None) -> str:
     """Pick the fastest available torch device unless one is requested."""
     if requested:

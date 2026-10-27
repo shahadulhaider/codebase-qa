@@ -96,6 +96,17 @@ class ChromaVectorIndex:
         )
         return cls(collection)
 
+    @staticmethod
+    def drop(path: Path, name: str) -> None:
+        """Delete a collection if it exists."""
+        client = chromadb.PersistentClient(path=str(path))
+        if name in {c.name for c in client.list_collections()}:
+            client.delete_collection(name)
+
+    @staticmethod
+    def collection_names(path: Path) -> list[str]:
+        return [c.name for c in chromadb.PersistentClient(path=str(path)).list_collections()]
+
     @property
     def name(self) -> str:
         return self._collection.name

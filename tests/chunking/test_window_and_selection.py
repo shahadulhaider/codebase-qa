@@ -41,7 +41,9 @@ def test_text_files_route_to_windows(name: str, language: str) -> None:
         token_count=whitespace_token_count,
     )
 
-    assert [(c.symbol_kind, c.language, c.start_line) for c in chunks] == [("window", language, 1)]
+    assert [(c.symbol_kind, c.language, c.start_line, c.chunker) for c in chunks] == [
+        ("window", language, 1, "treesitter")
+    ]
 
 
 @pytest.mark.parametrize(
