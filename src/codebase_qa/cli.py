@@ -548,3 +548,79 @@ def _result_cell(result: SearchResult, column: str, config: RetrievalConfig) -> 
                 return "-"
             moved = ranks[config.mode] - ranks["rerank"]
             return f"↑{moved}" if moved > 0 else f"↓{-moved}" if moved < 0 else "="
+
+
+eval_app = typer.Typer(no_args_is_help=True, help="Measure retrieval quality on question sets.")
+app.add_typer(eval_app, name="eval")
+
+EvalCacheOption = Annotated[
+    Path,
+    typer.Option(envvar="CODEBASE_QA_EVAL_CACHE", help="Where corpus clones and indexes live."),
+]
+
+
+@eval_app.command("check")
+def eval_check(
+    questions: Annotated[list[Path], typer.Argument(exists=True, dir_okay=False)],
+    cache_dir: EvalCacheOption = Path("eval/.cache"),
+) -> None:
+    """Validate question sets: every gold file and symbol must exist at the pinned commit."""
+    from codebase_qa.eval.dataset import QUESTION_TYPES, DatasetError, load_questions, resolve_spans
+    from codebase_qa.eval.runner import ensure_clone
+
+    console = Console()
+    failed = False
+    for path in questions:
+        try:
+            qs = load_questions(path)
+            repo = ensure_clone(qs.repo_url, qs.commit, cache_dir / qs.name / "repo")
+            spans = resolve_spans(repo, qs)
+        except (DatasetError, GitError) as error:
+            Console(stderr=True).print(f"{path}: {error}", markup=False)
+            failed = True
+            continue
+        counts = ", ".join(
+            f"{t} {sum(1 for q in qs.questions if q.type == t)}" for t in QUESTION_TYPES
+        )
+        console.print(
+            f"{qs.name}: {len(qs.questions)} questions ({counts}), "
+            f"{len(qs.gold_targets)} gold targets, {len(spans)} symbol spans resolved",
+            markup=False,
+        )
+    if failed:
+        raise typer.Exit(1)
+
+
+@eval_app.command("run")
+def eval_run(
+    config: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Stage file.")],
+    cache_dir: EvalCacheOption = Path("eval/.cache"),
+    results_dir: Annotated[Path, typer.Option(help="Tables are written here.")] = Path(
+        "eval/results"
+    ),
+    charts_dir: Annotated[Path, typer.Option(help="Charts are written here.")] = Path("docs/eval"),
+    device: DeviceOption = None,
+    offline: Annotated[bool, typer.Option(help="Use only cached models.")] = False,
+) -> None:
+    """Index each corpus once per (model, chunker) and score every question."""
+    from datetime import datetime
+
+    from codebase_qa.embeddings import EmbedderUnavailableError
+    from codebase_qa.eval.dataset import DatasetError
+    from codebase_qa.eval.report import write_report
+    from codebase_qa.eval.runner import EvalConfigError, load_config, run_stage
+
+    if offline:
+        os.environ["HF_HUB_OFFLINE"] = "1"
+    console = Console()
+    try:
+        stage = load_config(config)
+        results = run_stage(
+            stage, cache_dir, device=device, log=lambda m: console.print(m, markup=False)
+        )
+    except (EvalConfigError, DatasetError, GitError, EmbedderUnavailableError) as error:
+        Console(stderr=True).print(f"error: {error}", markup=False)
+        raise typer.Exit(1) from error
+    stamp = f"{datetime.now():%Y%m%d-%H%M%S}-{stage.name}"
+    for path in write_report(results, results_dir, charts_dir, stamp):
+        console.print(f"wrote {path}", markup=False)

@@ -1,0 +1,219 @@
+# Retrieval questions for encode/httpx, written from the source and docs at the
+# pinned commit before any retrieval run. Gold targets name the file, and the
+# symbol (a treesitter symbol path) when one function or class answers it.
+# Where sync and async clients duplicate code, questions name the sync Client.
+repo: https://github.com/encode/httpx.git
+ref: 0.28.1
+commit: 26d48e0634e6ee9cdc0533996db289ce4b430177
+questions:
+  - id: httpx-01
+    question: When a POST request receives a 302 or 301 response, which HTTP method is used for the follow-up request?
+    type: conceptual
+    gold:
+      - {file: httpx/_client.py, symbol: BaseClient._redirect_method}
+
+  - id: httpx-02
+    question: Why is the Authorization header removed on some redirects but kept on others?
+    type: conceptual
+    gold:
+      - {file: httpx/_client.py, symbol: BaseClient._redirect_headers}
+
+  - id: httpx-03
+    question: How is a relative or host-less Location header turned into the URL of the next request?
+    type: conceptual
+    gold:
+      - {file: httpx/_client.py, symbol: BaseClient._redirect_url}
+
+  - id: httpx-04
+    question: Where does the synchronous Client raise TooManyRedirects, and what limit does it compare against?
+    type: identifier
+    gold:
+      - {file: httpx/_client.py, symbol: Client._send_handling_redirects}
+
+  - id: httpx-05
+    question: How do the HTTP_PROXY, HTTPS_PROXY and NO_PROXY environment variables end up routing requests through a proxy?
+    type: cross-file
+    gold:
+      - {file: httpx/_utils.py, symbol: get_environment_proxies}
+      - {file: httpx/_client.py, symbol: BaseClient._get_proxy_map}
+
+  - id: httpx-06
+    question: When several mounted transports match a URL, how does the client decide which one handles the request?
+    type: cross-file
+    gold:
+      - {file: httpx/_utils.py, symbol: URLPattern}
+      - {file: httpx/_client.py, symbol: Client._transport_for_url}
+
+  - id: httpx-07
+    question: How does DigestAuth parse the WWW-Authenticate challenge from a 401 response?
+    type: identifier
+    gold:
+      - {file: httpx/_auth.py, symbol: DigestAuth._parse_challenge}
+
+  - id: httpx-08
+    question: How are credentials looked up from a .netrc file for a request's host?
+    type: conceptual
+    gold:
+      - {file: httpx/_auth.py, symbol: NetRCAuth}
+
+  - id: httpx-09
+    question: How does a timeout configured on the client reach the connection pool that actually sends the request?
+    type: cross-file
+    gold:
+      - {file: httpx/_client.py, symbol: BaseClient._set_timeout}
+      - {file: httpx/_config.py, symbol: Timeout.as_dict}
+      - {file: httpx/_transports/default.py, symbol: HTTPTransport.handle_request}
+
+  - id: httpx-10
+    question: What does the Timeout constructor do when only some of connect, read, write and pool are given?
+    type: identifier
+    gold:
+      - {file: httpx/_config.py, symbol: Timeout.__init__}
+
+  - id: httpx-11
+    question: How are errors from the underlying connection library converted into the library's own exception types?
+    type: conceptual
+    gold:
+      - {file: httpx/_transports/default.py, symbol: map_httpcore_exceptions}
+
+  - id: httpx-12
+    question: How is a response body decompressed when it was sent with gzip, brotli, or several content encodings at once?
+    type: cross-file
+    gold:
+      - {file: httpx/_models.py, symbol: Response._get_content_decoder}
+      - {file: httpx/_decoders.py, symbol: MultiDecoder}
+
+  - id: httpx-13
+    question: Which text encoding is used to decode a response when the server does not declare a charset?
+    type: conceptual
+    gold:
+      - {file: httpx/_models.py, symbol: Response.encoding}
+
+  - id: httpx-14
+    question: How does LineDecoder split streamed text into lines when a line break falls across chunk boundaries?
+    type: identifier
+    gold:
+      - {file: httpx/_decoders.py, symbol: LineDecoder}
+
+  - id: httpx-15
+    question: What does raise_for_status check, and what exception does it raise?
+    type: identifier
+    gold:
+      - {file: httpx/_models.py, symbol: Response.raise_for_status}
+
+  - id: httpx-16
+    question: What happens if you access the body of a streamed response before reading it?
+    type: conceptual
+    gold:
+      - {file: httpx/_models.py, symbol: Response.content}
+
+  - id: httpx-17
+    question: How is a multipart/form-data request body with file uploads built, including its boundary?
+    type: cross-file
+    gold:
+      - {file: httpx/_content.py, symbol: encode_multipart_data}
+      - {file: httpx/_multipart.py, symbol: MultipartStream}
+
+  - id: httpx-18
+    question: How is the content type of an uploaded file guessed when the caller does not give one?
+    type: conceptual
+    gold:
+      - {file: httpx/_multipart.py, symbol: _guess_content_type}
+
+  - id: httpx-19
+    question: How are JSON request bodies serialised, with respect to whitespace, non-ASCII characters and NaN values?
+    type: conceptual
+    gold:
+      - {file: httpx/_content.py, symbol: encode_json}
+
+  - id: httpx-20
+    question: How does encode_request choose between content, data, files and json arguments?
+    type: identifier
+    gold:
+      - {file: httpx/_content.py, symbol: encode_request}
+
+  - id: httpx-21
+    question: How does URL.join resolve a relative URL against a base URL?
+    type: identifier
+    gold:
+      - {file: httpx/_urls.py, symbol: URL.join}
+
+  - id: httpx-22
+    question: How is a client's base URL combined with a request path, and why does the base need a trailing slash?
+    type: conceptual
+    gold:
+      - {file: httpx/_client.py, symbol: BaseClient._merge_url}
+      - {file: httpx/_client.py, symbol: BaseClient._enforce_trailing_slash}
+
+  - id: httpx-23
+    question: How are internationalised domain names converted to ASCII when a URL is parsed?
+    type: conceptual
+    gold:
+      - {file: httpx/_urlparse.py, symbol: encode_host}
+
+  - id: httpx-24
+    question: Which characters get percent-encoded in URL paths and query strings, and which are left alone?
+    type: conceptual
+    gold:
+      - {file: httpx/_urlparse.py, symbol: quote}
+
+  - id: httpx-25
+    question: How are cookies set by a response stored on the client so later requests send them?
+    type: cross-file
+    gold:
+      - {file: httpx/_client.py, symbol: Client._send_single_request}
+      - {file: httpx/_models.py, symbol: Cookies.extract_cookies}
+
+  - id: httpx-26
+    question: How are passwords and auth tokens hidden when request headers are printed?
+    type: conceptual
+    gold:
+      - {file: httpx/_models.py, symbol: _obfuscate_sensitive_headers}
+      - {file: httpx/_models.py, symbol: Headers.__repr__}
+
+  - id: httpx-27
+    question: How can I test code that makes HTTP requests without network access by returning canned responses?
+    type: cross-file
+    gold:
+      - {file: httpx/_transports/mock.py, symbol: MockTransport}
+      - {file: docs/advanced/transports.md}
+
+  - id: httpx-28
+    question: How can a client send requests directly to a WSGI application running in the same process?
+    type: conceptual
+    gold:
+      - {file: httpx/_transports/wsgi.py, symbol: WSGITransport.handle_request}
+
+  - id: httpx-29
+    question: Where are request and response event hooks called while a request is sent?
+    type: cross-file
+    gold:
+      - {file: httpx/_client.py, symbol: Client._send_handling_redirects}
+      - {file: docs/advanced/event-hooks.md}
+
+  - id: httpx-30
+    question: How is the default SSL context created, and which environment variables can point it at a CA bundle?
+    type: conceptual
+    gold:
+      - {file: httpx/_config.py, symbol: create_ssl_context}
+
+  - id: httpx-31
+    question: What does download_response in the command-line tool do to show progress while saving a file?
+    type: identifier
+    gold:
+      - {file: httpx/_main.py, symbol: download_response}
+
+  - id: httpx-32
+    question: How is the Link response header parsed into a dictionary keyed by rel?
+    type: conceptual
+    gold:
+      - {file: httpx/_models.py, symbol: Response.links}
+      - {file: httpx/_models.py, symbol: _parse_header_links}
+
+  - id: httpx-33
+    question: How is HTTP/2 enabled, and what happens if the h2 package is not installed?
+    type: cross-file
+    gold:
+      - {file: httpx/_client.py, symbol: Client.__init__}
+      - {file: httpx/_transports/default.py, symbol: HTTPTransport.__init__}
+      - {file: docs/http2.md}

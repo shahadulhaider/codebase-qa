@@ -13,3 +13,6 @@ htmlcov/
 
 # Local secrets
 .env
+
+# Eval corpus clones and indexes
+eval/.cache/

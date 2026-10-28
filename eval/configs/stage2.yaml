@@ -1,0 +1,13 @@
+# Stage 2: do BM25, hybrid fusion and reranking add anything on top of dense?
+# Treesitter chunks only; the embedders are the best one or two from stage 1.
+# Dense is repeated so every mode sits in one table.
+name: stage2
+questions:
+  - ../questions/httpx.yaml
+  - ../questions/zod.yaml
+models:
+  - minilm
+chunkers: [treesitter]
+modes: [dense, bm25, hybrid]
+rerank: [false, true]
+ks: [1, 5, 10]

@@ -1,0 +1,17 @@
+# Stage 1: does syntax-aware chunking help, and which embedder retrieves best?
+# Dense retrieval only, every chunker x embedder pair.
+name: stage1
+questions:
+  - ../questions/httpx.yaml
+  - ../questions/zod.yaml
+models:
+  - minilm
+  - coderankembed
+  - name: qwen3-0.6b
+    ollama: qwen3-embedding:0.6b
+    tokenizer: Qwen/Qwen3-Embedding-0.6B
+    query_prefix: "Instruct: Given a question about a code repository, retrieve the code or documentation that answers it\nQuery:"
+chunkers: [treesitter, window]
+modes: [dense]
+rerank: [false]
+ks: [1, 5, 10]

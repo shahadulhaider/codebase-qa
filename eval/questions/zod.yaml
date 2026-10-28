@@ -1,0 +1,206 @@
+# Retrieval questions for colinhacks/zod, written from the source at the pinned
+# commit before any retrieval run. The repository also ships the legacy v3
+# implementation, so questions that could match both name Zod 4; gold targets
+# point at the v4 sources.
+repo: https://github.com/colinhacks/zod.git
+ref: v4.6.7
+commit: b500a2ee95134f81d74da7911d7378dd2853d042
+questions:
+  - id: zod-01
+    question: In Zod 4, when several custom error maps could supply a message for an issue, which one wins and in what order are they tried?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/util.ts, symbol: finalizeIssue}
+
+  - id: zod-02
+    question: How does z.coerce.number() convert its input before validating it?
+    type: cross-file
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: $ZodNumber}
+      - {file: packages/zod/src/v4/classic/coerce.ts, symbol: number}
+
+  - id: zod-03
+    question: When no option of a union matches, what error is reported and what does it contain?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: handleUnionResults}
+
+  - id: zod-04
+    question: How does a discriminated union choose which option to validate without trying every option?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: $ZodDiscriminatedUnion}
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: getDiscriminatedOption}
+
+  - id: zod-05
+    question: In Zod 4, how does a strict object report keys that are not in its shape, and what happens to unknown keys by default?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: handleCatchall}
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: $ZodObject}
+
+  - id: zod-06
+    question: Is a default value validated against the schema when the input is undefined?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: $ZodDefault}
+
+  - id: zod-07
+    question: How does $ZodCatch replace a failed parse result with the fallback value?
+    type: identifier
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: $ZodCatch}
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: handleCatchResult}
+
+  - id: zod-08
+    question: In a pipe of two schemas, does the second schema still run when the first one fails?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: handlePipeResult}
+
+  - id: zod-09
+    question: How does a codec behave differently when encoding versus decoding a value?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: $ZodCodec}
+
+  - id: zod-10
+    question: Why does a synchronous parse throw $ZodAsyncError, and what triggers it?
+    type: cross-file
+    gold:
+      - {file: packages/zod/src/v4/core/parse.ts, symbol: _parse}
+      - {file: packages/zod/src/v4/core/core.ts, symbol: $ZodAsyncError}
+
+  - id: zod-11
+    question: How does flattenError group issues into formErrors and fieldErrors?
+    type: identifier
+    gold:
+      - {file: packages/zod/src/v4/core/errors.ts, symbol: flattenError}
+
+  - id: zod-12
+    question: What text format does prettifyError produce for a list of issues?
+    type: identifier
+    gold:
+      - {file: packages/zod/src/v4/core/errors.ts, symbol: prettifyError}
+
+  - id: zod-13
+    question: How is a nested error object keyed by property path built from a flat list of issues?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/errors.ts, symbol: treeifyError}
+
+  - id: zod-14
+    question: How does the multipleOf check avoid floating-point rounding errors with decimal steps?
+    type: cross-file
+    gold:
+      - {file: packages/zod/src/v4/core/checks.ts, symbol: $ZodCheckMultipleOf}
+      - {file: packages/zod/src/v4/core/util.ts, symbol: floatSafeRemainder}
+
+  - id: zod-15
+    question: How is the regular expression for ISO datetime strings built from the precision and offset options?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/regexes.ts, symbol: datetime}
+      - {file: packages/zod/src/v4/core/regexes.ts, symbol: timeSource}
+
+  - id: zod-16
+    question: How are URL strings validated, including restrictions on the hostname and protocol?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: validateURL}
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: $ZodURL}
+
+  - id: zod-17
+    question: How does isValidJWT check that a token is well formed and uses the expected algorithm?
+    type: identifier
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: isValidJWT}
+
+  - id: zod-18
+    question: How are credit card numbers checked for a valid checksum?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: isLuhnAlgo}
+
+  - id: zod-19
+    question: How does isValidIPv6 decide whether a string is an IPv6 address?
+    type: identifier
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: isValidIPv6}
+
+  - id: zod-20
+    question: How is a schema converted to JSON Schema, including shared definitions and recursive references?
+    type: cross-file
+    gold:
+      - {file: packages/zod/src/v4/core/json-schema-processors.ts, symbol: toJSONSchema}
+      - {file: packages/zod/src/v4/core/to-json-schema.ts, symbol: extractDefs}
+
+  - id: zod-21
+    question: When generating JSON Schema for an object, how are properties and the required list produced?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/json-schema-processors.ts, symbol: objectProcessor}
+
+  - id: zod-22
+    question: How is a JSON Schema document converted back into a Zod schema, including resolving $ref pointers?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/classic/from-json-schema.ts, symbol: fromJSONSchema}
+      - {file: packages/zod/src/v4/classic/from-json-schema.ts, symbol: resolveRef}
+
+  - id: zod-23
+    question: How do metadata registries work, and how does .meta() attach metadata to the global registry?
+    type: cross-file
+    gold:
+      - {file: packages/zod/src/v4/core/registries.ts, symbol: $ZodRegistry}
+      - {file: packages/zod/src/v4/classic/schemas.ts, symbol: meta}
+
+  - id: zod-24
+    question: What does z.compile do to a schema, and what makes it refuse to compile one?
+    type: identifier
+    gold:
+      - {file: packages/zod/src/v4/core/compile.ts, symbol: compile}
+
+  - id: zod-25
+    question: How are schema classes constructed so that instanceof checks work across traits and duplicate copies of the library?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/core.ts, symbol: $constructor}
+
+  - id: zod-26
+    question: How are the default error messages translated into another language, and how is a locale switched on?
+    type: cross-file
+    gold:
+      - {file: packages/zod/src/v4/core/core.ts, symbol: config}
+      - {file: packages/zod/src/v4/locales/en.ts}
+
+  - id: zod-27
+    question: How do Zod schemas expose the Standard Schema interface so other libraries can validate with them?
+    type: cross-file
+    gold:
+      - {file: packages/zod/src/v4/core/standard-schema.ts, symbol: StandardSchemaV1}
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: standardProps}
+
+  - id: zod-28
+    question: How does getParsedType classify an unknown value into a type name for error messages?
+    type: identifier
+    gold:
+      - {file: packages/zod/src/v4/core/util.ts, symbol: getParsedType}
+
+  - id: zod-29
+    question: How does a lazy schema defer building its inner schema until it is first used?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/core/schemas.ts, symbol: $ZodLazy}
+
+  - id: zod-30
+    question: How does deep partial make every nested object field optional?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/classic/deep-partial.ts, symbol: deepPartial}
+
+  - id: zod-31
+    question: Which Zod 3 names such as setErrorMap, ZodSchema and ZodFirstPartyTypeKind are still exported for compatibility, and what do they map to?
+    type: conceptual
+    gold:
+      - {file: packages/zod/src/v4/classic/compat.ts}

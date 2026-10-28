@@ -16,6 +16,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
+import httpx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -228,6 +229,100 @@ def _restore_extended_attention_mask(model: SentenceTransformer) -> None:
                 return (1.0 - mask) * torch.finfo(dtype).min
 
             cls.get_extended_attention_mask = get_extended_attention_mask  # pyright: ignore[reportAttributeAccessIssue]
+
+
+DEFAULT_OLLAMA_URL = "http://localhost:11434"
+
+
+class EmbedderUnavailableError(RuntimeError):
+    pass
+
+
+class OllamaEmbedder:
+    """Embedder backed by a model served by Ollama's ``/api/embed`` endpoint.
+
+    Vectors are normalised here because the API does not promise unit length.
+    ``max_seq_length`` is the context the server runs the model with, which
+    is Ollama's ``num_ctx`` rather than the model's trained maximum.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        *,
+        base_url: str = DEFAULT_OLLAMA_URL,
+        revision: str | None = None,
+        query_prefix: str = "",
+        document_prefix: str = "",
+        max_seq_length: int = 2048,
+        batch_size: int = 32,
+        timeout: float = 300.0,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self._model = model
+        self._revision = revision
+        self._query_prefix = query_prefix
+        self._document_prefix = document_prefix
+        self._max_seq_length = max_seq_length
+        self._batch_size = batch_size
+        self._client = httpx.Client(
+            base_url=base_url.rstrip("/"), timeout=timeout, transport=transport
+        )
+        self._dimension = int(self._embed(["dimension probe"]).shape[1])
+
+    @property
+    def model_id(self) -> str:
+        return self._model
+
+    @property
+    def revision(self) -> str | None:
+        return self._revision
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    @property
+    def max_seq_length(self) -> int:
+        return self._max_seq_length
+
+    def close(self) -> None:
+        self._client.close()
+
+    def embed_documents(self, texts: Sequence[str]) -> Vectors:
+        if not texts:
+            return np.zeros((0, self._dimension), dtype=np.float32)
+        batches = [
+            self._embed([self._document_prefix + t for t in texts[i : i + self._batch_size]])
+            for i in range(0, len(texts), self._batch_size)
+        ]
+        return np.concatenate(batches)
+
+    def embed_query(self, text: str) -> Vectors:
+        return self._embed([self._query_prefix + text])[0]
+
+    def _embed(self, texts: list[str]) -> Vectors:
+        try:
+            response = self._client.post("/api/embed", json={"model": self._model, "input": texts})
+        except httpx.TransportError as error:
+            raise EmbedderUnavailableError(
+                f"cannot reach Ollama at {self._client.base_url}: {error}"
+            ) from error
+        if response.status_code == 404:
+            raise EmbedderUnavailableError(
+                f"Ollama has no model {self._model!r}; run `ollama pull {self._model}`"
+            )
+        if response.is_error:
+            raise EmbedderUnavailableError(
+                f"Ollama returned {response.status_code}: {response.text[:200]}"
+            )
+        vectors = np.asarray(response.json()["embeddings"], dtype=np.float32)
+        if vectors.shape[0] != len(texts):
+            raise EmbedderUnavailableError(
+                f"Ollama returned {vectors.shape[0]} embeddings for {len(texts)} inputs"
+            )
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        return (vectors / np.where(norms == 0.0, 1.0, norms)).astype(np.float32)
 
 
 _TOKEN = re.compile(r"[A-Za-z0-9]+")
