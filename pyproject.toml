@@ -53,7 +53,7 @@ venv = ".venv"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -m 'not model'"
-markers = ["model: downloads and runs real embedding models"]
+markers = ["model: downloads and runs real embedding or reranking models"]
 # Chroma reports collections created without an embedding function as "legacy".
 filterwarnings = ["ignore:legacy embedding function config:DeprecationWarning"]
 

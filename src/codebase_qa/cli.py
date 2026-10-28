@@ -30,7 +30,16 @@ from codebase_qa.indexer import (
     index_stats,
     is_up_to_date,
 )
-from codebase_qa.retrieval import Filters, IndexNotFoundError, Mode, Searcher, StaleIndexError
+from codebase_qa.retrieval import (
+    CrossEncoderReranker,
+    Filters,
+    IndexNotFoundError,
+    Mode,
+    RetrievalConfig,
+    Retriever,
+    SearchResult,
+    StaleIndexError,
+)
 from codebase_qa.store import SchemaVersionError
 
 REFERENCE_TOKENIZER = "minilm"
@@ -254,41 +263,58 @@ def search(
         str | None, typer.Option(envvar="CODEBASE_QA_DEVICE", help="cpu, cuda or mps.")
     ] = None,
     index_dir: IndexDirOption = None,
+    candidate_k: Annotated[
+        int, typer.Option(help="Results per retriever before hybrid fusion.")
+    ] = RetrievalConfig.candidate_k,
+    rrf_k: Annotated[int, typer.Option(help="RRF rank constant.")] = RetrievalConfig.rrf_k,
+    rerank: Annotated[bool, typer.Option(help="Rerank with a cross-encoder.")] = False,
+    rerank_k: Annotated[
+        int, typer.Option(help="Top results the cross-encoder reorders.")
+    ] = RetrievalConfig.rerank_k,
     show: Annotated[bool, typer.Option(help="Print each result's text.")] = False,
 ) -> None:
     """Search an index and print ranked chunks."""
     target = index_dir or repo / DEFAULT_INDEX_DIR
     model_id = resolve_preset(model).model_id if model else None
-    try:
-        searcher = Searcher.open(target, model_id=model_id, chunker=chunker)
-    except (IndexNotFoundError, StaleIndexError, SchemaVersionError) as error:
-        raise typer.BadParameter(str(error)) from error
     console = Console()
-    build = searcher.build
+    try:
+        config = RetrievalConfig(
+            mode=mode,
+            k=k,
+            candidate_k=candidate_k,
+            rrf_k=rrf_k,
+            rerank=rerank,
+            rerank_k=rerank_k,
+            filters=Filters(
+                languages=tuple(lang or ()),
+                kinds=tuple(kind or ()),
+                roles=tuple(role or ()),
+                path_glob=path,
+            ),
+        )
+        retriever = Retriever.open(
+            target,
+            model_id=model_id,
+            chunker=chunker,
+            embedder=lambda: _load_embedder(console, build.model_id, build.model_revision, device),
+            reranker=lambda: _load_reranker(console, device),
+        )
+    except (ValueError, IndexNotFoundError, StaleIndexError, SchemaVersionError) as error:
+        raise typer.BadParameter(str(error)) from error
+    build = retriever.searcher.build
+    with retriever:
+        results = retriever.retrieve(query, config)
 
-    def embedder() -> SentenceTransformerEmbedder:
-        with console.status(f"loading {build.model_id}"):
-            return SentenceTransformerEmbedder(
-                preset_for(build.model_id, build.model_revision), device=device
-            )
-
-    filters = Filters(
-        languages=tuple(lang or ()),
-        kinds=tuple(kind or ()),
-        roles=tuple(role or ()),
-        path_glob=path,
-    )
-    with searcher:
-        results = searcher.search(query, mode=mode, k=k, filters=filters, embedder=embedder)
-
-    label = "similarity" if mode == "dense" else "bm25"
-    table = Table(title=f"{mode} · {build.collection} · {build.indexed_rev[:12]}")
-    for column in ("#", label, "location", "symbol", "kind"):
-        numeric = column in {"#", label}
+    title = f"{mode}{' + rerank' if rerank else ''} · {build.collection} · {build.indexed_rev[:12]}"
+    table = Table(title=title)
+    columns = _result_columns(config)
+    for column in ("#", *columns, "location", "symbol", "kind"):
+        numeric = column == "#" or column in columns
         table.add_column(column, justify="right" if numeric else "left", overflow="fold")
     for rank, r in enumerate(results, 1):
         c = r.chunk
-        table.add_row(str(rank), f"{r.score:.3f}", r.location, c.symbol_path or "-", c.symbol_kind)
+        cells = [_result_cell(r, column, config) for column in columns]
+        table.add_row(str(rank), *cells, r.location, c.symbol_path or "-", c.symbol_kind)
     console.print(table)
     if not results:
         console.print("no results")
@@ -296,3 +322,43 @@ def search(
         for rank, r in enumerate(results, 1):
             console.rule(f"#{rank} {r.location} {r.chunk.symbol_path}")
             console.print(r.chunk.text, markup=False, highlight=False)
+
+
+def _load_embedder(
+    console: Console, model_id: str, revision: str | None, device: str | None
+) -> SentenceTransformerEmbedder:
+    with console.status(f"loading {model_id}"):
+        return SentenceTransformerEmbedder(preset_for(model_id, revision), device=device)
+
+
+def _load_reranker(console: Console, device: str | None) -> CrossEncoderReranker:
+    with console.status("loading reranker"):
+        return CrossEncoderReranker(device=device)
+
+
+def _result_columns(config: RetrievalConfig) -> list[str]:
+    columns = {"dense": ["similarity"], "bm25": ["bm25"], "hybrid": ["rrf", "dense#", "bm25#"]}[
+        config.mode
+    ]
+    return [*columns, "rerank", "moved"] if config.rerank else columns
+
+
+def _result_cell(result: SearchResult, column: str, config: RetrievalConfig) -> str:
+    scores, ranks = result.scores, result.ranks
+    match column:
+        case "similarity":
+            return f"{1.0 - scores['dense_distance']:.3f}"
+        case "bm25":
+            return f"{scores['bm25']:.3f}"
+        case "rrf":
+            return f"{scores['rrf']:.4f}"
+        case "dense#" | "bm25#":
+            stage_rank = ranks.get(column.removesuffix("#"))
+            return "-" if stage_rank is None else str(stage_rank)
+        case "rerank":
+            return f"{scores['rerank']:.2f}" if "rerank" in scores else "-"
+        case _:
+            if "rerank" not in ranks:
+                return "-"
+            moved = ranks[config.mode] - ranks["rerank"]
+            return f"↑{moved}" if moved > 0 else f"↓{-moved}" if moved < 0 else "="
