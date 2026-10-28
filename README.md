@@ -19,7 +19,7 @@ How it works, and why it is built this way: [docs/architecture.md](docs/architec
 Requires Python 3.12+, [uv](https://docs.astral.sh/uv/) and `git`.
 
 ```sh
-git clone <this repository> codebase-qa
+git clone https://github.com/shahadulhaider/codebase-qa.git
 cd codebase-qa
 uv sync
 ```
