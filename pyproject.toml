@@ -3,6 +3,8 @@ name = "codebase-qa"
 version = "0.1.0"
 description = "Index a Git repository and answer questions about it with cited sources."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Muhammad Shahadul Haider", email = "shahadul.haider@gmail.com" }
 ]
