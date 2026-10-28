@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "chromadb>=1.5.9",
     "einops>=0.8.2",
+    "httpx>=0.28.1",
     "rich>=15.0.0",
     "sentence-transformers>=6.2.0",
     "torch>=2.14.1",
@@ -22,6 +23,11 @@ dependencies = [
 
 [project.scripts]
 codebase-qa = "codebase_qa.cli:app"
+
+[project.optional-dependencies]
+anthropic = [
+    "anthropic>=2.3.0",
+]
 
 [build-system]
 requires = ["hatchling"]

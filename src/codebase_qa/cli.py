@@ -2,8 +2,9 @@
 
 import os
 import shutil
+import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
@@ -11,6 +12,15 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TimeElapsedCo
 from rich.table import Table
 
 from codebase_qa import __version__
+from codebase_qa.answer import (
+    DEFAULT_BASE_URL,
+    DEFAULT_LLM_MODEL,
+    AnswerBackend,
+    AnswerStream,
+    BackendError,
+    BackendUnavailableError,
+    OpenAICompatibleBackend,
+)
 from codebase_qa.chunking import ChunkerName, LanguageRegistry, chunk_file, route_file
 from codebase_qa.embeddings import (
     DEFAULT_PRESET,
@@ -242,65 +252,54 @@ def _remove_index(target: Path) -> None:
     shutil.rmtree(target)
 
 
+KOption = Annotated[int, typer.Option("--k", "-k", help="Number of results.")]
+ModeOption = Annotated[Mode, typer.Option(help="Retriever.")]
+LangOption = Annotated[list[str] | None, typer.Option(help="Language filter; repeatable.")]
+KindOption = Annotated[list[str] | None, typer.Option(help="Symbol kind filter; repeatable.")]
+RoleOption = Annotated[
+    list[str] | None, typer.Option(help="source, test, docs or config; repeatable.")
+]
+PathOption = Annotated[str | None, typer.Option(help="Path glob, e.g. 'httpx/_*.py'.")]
+ChunkerOption = Annotated[ChunkerName | None, typer.Option(help="Build to query.")]
+QueryModelOption = Annotated[
+    str | None,
+    typer.Option(envvar="CODEBASE_QA_MODEL", help="Embedder preset or Hugging Face id."),
+]
+DeviceOption = Annotated[
+    str | None, typer.Option(envvar="CODEBASE_QA_DEVICE", help="cpu, cuda or mps.")
+]
+CandidateKOption = Annotated[int, typer.Option(help="Results per retriever before hybrid fusion.")]
+RrfKOption = Annotated[int, typer.Option(help="RRF rank constant.")]
+RerankOption = Annotated[bool, typer.Option(help="Rerank with a cross-encoder.")]
+RerankKOption = Annotated[int, typer.Option(help="Top results the cross-encoder reorders.")]
+
+
 @app.command()
 def search(
     query: Annotated[str, typer.Argument(help="Natural-language or identifier query.")],
     repo: Annotated[Path, typer.Argument(exists=True, file_okay=False)] = Path("."),
-    k: Annotated[int, typer.Option("--k", "-k", help="Number of results.")] = 10,
-    mode: Annotated[Mode, typer.Option(help="Retriever.")] = "dense",
-    lang: Annotated[list[str] | None, typer.Option(help="Language filter; repeatable.")] = None,
-    kind: Annotated[list[str] | None, typer.Option(help="Symbol kind filter; repeatable.")] = None,
-    role: Annotated[
-        list[str] | None, typer.Option(help="source, test, docs or config; repeatable.")
-    ] = None,
-    path: Annotated[str | None, typer.Option(help="Path glob, e.g. 'httpx/_*.py'.")] = None,
-    chunker: Annotated[ChunkerName | None, typer.Option(help="Build to query.")] = None,
-    model: Annotated[
-        str | None,
-        typer.Option(envvar="CODEBASE_QA_MODEL", help="Embedder preset or Hugging Face id."),
-    ] = None,
-    device: Annotated[
-        str | None, typer.Option(envvar="CODEBASE_QA_DEVICE", help="cpu, cuda or mps.")
-    ] = None,
+    k: KOption = 10,
+    mode: ModeOption = "dense",
+    lang: LangOption = None,
+    kind: KindOption = None,
+    role: RoleOption = None,
+    path: PathOption = None,
+    chunker: ChunkerOption = None,
+    model: QueryModelOption = None,
+    device: DeviceOption = None,
     index_dir: IndexDirOption = None,
-    candidate_k: Annotated[
-        int, typer.Option(help="Results per retriever before hybrid fusion.")
-    ] = RetrievalConfig.candidate_k,
-    rrf_k: Annotated[int, typer.Option(help="RRF rank constant.")] = RetrievalConfig.rrf_k,
-    rerank: Annotated[bool, typer.Option(help="Rerank with a cross-encoder.")] = False,
-    rerank_k: Annotated[
-        int, typer.Option(help="Top results the cross-encoder reorders.")
-    ] = RetrievalConfig.rerank_k,
+    candidate_k: CandidateKOption = RetrievalConfig.candidate_k,
+    rrf_k: RrfKOption = RetrievalConfig.rrf_k,
+    rerank: RerankOption = False,
+    rerank_k: RerankKOption = RetrievalConfig.rerank_k,
     show: Annotated[bool, typer.Option(help="Print each result's text.")] = False,
 ) -> None:
     """Search an index and print ranked chunks."""
-    target = index_dir or repo / DEFAULT_INDEX_DIR
-    model_id = resolve_preset(model).model_id if model else None
     console = Console()
-    try:
-        config = RetrievalConfig(
-            mode=mode,
-            k=k,
-            candidate_k=candidate_k,
-            rrf_k=rrf_k,
-            rerank=rerank,
-            rerank_k=rerank_k,
-            filters=Filters(
-                languages=tuple(lang or ()),
-                kinds=tuple(kind or ()),
-                roles=tuple(role or ()),
-                path_glob=path,
-            ),
-        )
-        retriever = Retriever.open(
-            target,
-            model_id=model_id,
-            chunker=chunker,
-            embedder=lambda: _load_embedder(console, build.model_id, build.model_revision, device),
-            reranker=lambda: _load_reranker(console, device),
-        )
-    except (ValueError, IndexNotFoundError, StaleIndexError, SchemaVersionError) as error:
-        raise typer.BadParameter(str(error)) from error
+    config = _retrieval_config(
+        k, mode, lang, kind, role, path, candidate_k, rrf_k, rerank, rerank_k
+    )
+    retriever = _open_retriever(console, repo, index_dir, model, chunker, device)
     build = retriever.searcher.build
     with retriever:
         results = retriever.retrieve(query, config)
@@ -322,6 +321,191 @@ def search(
         for rank, r in enumerate(results, 1):
             console.rule(f"#{rank} {r.location} {r.chunk.symbol_path}")
             console.print(r.chunk.text, markup=False, highlight=False)
+
+
+BackendName = Literal["openai-compatible", "anthropic"]
+
+
+@app.command()
+def ask(
+    question: Annotated[str, typer.Argument(help="Question about the indexed code.")],
+    repo: Annotated[Path, typer.Argument(exists=True, file_okay=False)] = Path("."),
+    k: KOption = 8,
+    mode: ModeOption = "dense",
+    lang: LangOption = None,
+    kind: KindOption = None,
+    role: RoleOption = None,
+    path: PathOption = None,
+    chunker: ChunkerOption = None,
+    model: QueryModelOption = None,
+    device: DeviceOption = None,
+    index_dir: IndexDirOption = None,
+    candidate_k: CandidateKOption = RetrievalConfig.candidate_k,
+    rrf_k: RrfKOption = RetrievalConfig.rrf_k,
+    rerank: RerankOption = False,
+    rerank_k: RerankKOption = RetrievalConfig.rerank_k,
+    backend: Annotated[
+        BackendName, typer.Option(envvar="CODEBASE_QA_BACKEND", help="Answer model API.")
+    ] = "openai-compatible",
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            envvar="CODEBASE_QA_BASE_URL",
+            help=f"API base URL [default: {DEFAULT_BASE_URL} for openai-compatible].",
+        ),
+    ] = None,
+    llm_model: Annotated[
+        str | None,
+        typer.Option(
+            envvar="CODEBASE_QA_LLM_MODEL",
+            help=f"Answer model [default: {DEFAULT_LLM_MODEL} for openai-compatible].",
+        ),
+    ] = None,
+    max_tokens: Annotated[int | None, typer.Option(help="Cap on answer length in tokens.")] = None,
+    show_context: Annotated[
+        bool, typer.Option(help="Print the exact prompt sent to the model.")
+    ] = False,
+) -> None:
+    """Answer a question from retrieved code, citing sources as [n].
+
+    The API key is read from CODEBASE_QA_API_KEY (or ANTHROPIC_API_KEY for the
+    anthropic backend).
+    """
+    console = Console()
+    errors = Console(stderr=True, soft_wrap=True)
+    config = _retrieval_config(
+        k, mode, lang, kind, role, path, candidate_k, rrf_k, rerank, rerank_k
+    )
+    retriever = _open_retriever(console, repo, index_dir, model, chunker, device)
+    with retriever:
+        results = retriever.retrieve(question, config)
+    if not results:
+        errors.print("no chunks matched; nothing to answer from")
+        raise typer.Exit(1)
+
+    llm = _answer_backend(backend, base_url, llm_model, max_tokens)
+    answer = AnswerStream(question, results, llm)
+    if show_context:
+        console.rule("system")
+        console.print(answer.system, markup=False, highlight=False, soft_wrap=True)
+        console.rule("user")
+        console.print(answer.user, markup=False, highlight=False, soft_wrap=True)
+        console.rule(f"answer · {llm.name} · {llm.model}")
+    try:
+        with console.status(f"waiting for {llm.model}") as status:
+            for piece in answer:
+                status.stop()
+                sys.stdout.write(piece)
+                sys.stdout.flush()
+    except BackendUnavailableError as error:
+        errors.print(f"error: {error}", markup=False)
+        errors.print(
+            "Start the model server or point --base-url at one. "
+            "`codebase-qa search` works without a model."
+        )
+        raise typer.Exit(1) from error
+    except BackendError as error:
+        errors.print(f"\nerror: {error}", markup=False)
+        raise typer.Exit(1) from error
+    finally:
+        if isinstance(llm, OpenAICompatibleBackend):
+            llm.close()
+    sys.stdout.write("\n")
+
+    console.print("\nsources:")
+    for number in answer.cited:
+        r = answer.sources[number - 1]
+        symbol = f"  {r.chunk.symbol_path}" if r.chunk.symbol_path else ""
+        console.print(f"  [{number}] {r.location}{symbol}", markup=False, highlight=False)
+    if not answer.cited:
+        errors.print("warning: the answer cites no sources", style="yellow")
+    if answer.invalid:
+        dropped = ", ".join(f"[{n}]" for n in answer.invalid)
+        errors.print(
+            f"warning: dropped citations to unknown sources: {dropped} "
+            f"(only 1-{len(answer.sources)} were provided)",
+            style="yellow",
+            markup=False,
+        )
+
+
+def _answer_backend(
+    backend: BackendName, base_url: str | None, llm_model: str | None, max_tokens: int | None
+) -> AnswerBackend:
+    api_key = os.environ.get("CODEBASE_QA_API_KEY") or None
+    if backend == "anthropic":
+        from codebase_qa.answer.anthropic import DEFAULT_ANTHROPIC_MODEL, AnthropicBackend
+
+        try:
+            return AnthropicBackend(
+                llm_model or DEFAULT_ANTHROPIC_MODEL,
+                api_key=api_key,
+                base_url=base_url,
+                **({"max_tokens": max_tokens} if max_tokens else {}),
+            )
+        except BackendError as error:
+            raise typer.BadParameter(str(error), param_hint="--backend") from error
+    return OpenAICompatibleBackend(
+        base_url or DEFAULT_BASE_URL,
+        llm_model or DEFAULT_LLM_MODEL,
+        api_key=api_key,
+        max_tokens=max_tokens,
+    )
+
+
+def _retrieval_config(
+    k: int,
+    mode: Mode,
+    lang: list[str] | None,
+    kind: list[str] | None,
+    role: list[str] | None,
+    path: str | None,
+    candidate_k: int,
+    rrf_k: int,
+    rerank: bool,
+    rerank_k: int,
+) -> RetrievalConfig:
+    try:
+        return RetrievalConfig(
+            mode=mode,
+            k=k,
+            candidate_k=candidate_k,
+            rrf_k=rrf_k,
+            rerank=rerank,
+            rerank_k=rerank_k,
+            filters=Filters(
+                languages=tuple(lang or ()),
+                kinds=tuple(kind or ()),
+                roles=tuple(role or ()),
+                path_glob=path,
+            ),
+        )
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+def _open_retriever(
+    console: Console,
+    repo: Path,
+    index_dir: Path | None,
+    model: str | None,
+    chunker: ChunkerName | None,
+    device: str | None,
+) -> Retriever:
+    target = index_dir or repo / DEFAULT_INDEX_DIR
+    model_id = resolve_preset(model).model_id if model else None
+    try:
+        retriever = Retriever.open(
+            target,
+            model_id=model_id,
+            chunker=chunker,
+            embedder=lambda: _load_embedder(console, build.model_id, build.model_revision, device),
+            reranker=lambda: _load_reranker(console, device),
+        )
+    except (ValueError, IndexNotFoundError, StaleIndexError, SchemaVersionError) as error:
+        raise typer.BadParameter(str(error)) from error
+    build = retriever.searcher.build
+    return retriever
 
 
 def _load_embedder(
