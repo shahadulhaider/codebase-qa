@@ -416,7 +416,9 @@ def ask(
     for number in answer.cited:
         r = answer.sources[number - 1]
         symbol = f"  {r.chunk.symbol_path}" if r.chunk.symbol_path else ""
-        console.print(f"  [{number}] {r.location}{symbol}", markup=False, highlight=False)
+        console.print(
+            f"  [{number}] {r.location}{symbol}", markup=False, highlight=False, soft_wrap=True
+        )
     if not answer.cited:
         errors.print("warning: the answer cites no sources", style="yellow")
     if answer.invalid:

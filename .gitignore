@@ -10,3 +10,6 @@ htmlcov/
 
 # Local index data
 .codebase-qa/
+
+# Local secrets
+.env
