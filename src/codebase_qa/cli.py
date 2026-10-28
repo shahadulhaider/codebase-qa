@@ -54,7 +54,7 @@ from codebase_qa.store import SchemaVersionError
 
 REFERENCE_TOKENIZER = "minilm"
 
-app = typer.Typer(no_args_is_help=True, add_completion=False)
+app = typer.Typer(no_args_is_help=True, add_completion=False, rich_markup_mode="markdown")
 
 
 @app.callback()
@@ -119,7 +119,7 @@ IndexDirOption = Annotated[
     Path | None,
     typer.Option(
         envvar="CODEBASE_QA_INDEX_DIR",
-        help=f"Index location [default: <repo>/{DEFAULT_INDEX_DIR}].",
+        help=f"Index location [default: REPO/{DEFAULT_INDEX_DIR}].",
     ),
 ]
 
@@ -550,7 +550,11 @@ def _result_cell(result: SearchResult, column: str, config: RetrievalConfig) -> 
             return f"↑{moved}" if moved > 0 else f"↓{-moved}" if moved < 0 else "="
 
 
-eval_app = typer.Typer(no_args_is_help=True, help="Measure retrieval quality on question sets.")
+eval_app = typer.Typer(
+    no_args_is_help=True,
+    rich_markup_mode="markdown",
+    help="Measure retrieval quality on question sets.",
+)
 app.add_typer(eval_app, name="eval")
 
 EvalCacheOption = Annotated[
